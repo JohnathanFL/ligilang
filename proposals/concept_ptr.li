@@ -1,0 +1,65 @@
+-- This is an idea for a possible way of implementing pseudo-vtables in Ligi
+-- Essentially, this would be a userspace solution:
+
+-- Note this code is not necessarily working. It's pseudo-pseudocode of what I'd like to do
+-- I use smushedcase for the functions to match with the idea of smushedcase functions for compiler
+-- builtin funcs
+
+-- Using the `concept type vs struct type vs enum type` and `*_` proposals
+let conceptvtable = pure fn C: concept type -> V: type =
+  var builder = @TypeBuilder.init(#struct) -- We'll provide something like this for building new types
+  
+  let reqMeths = C.reqMeths -- would be an array of all method types required for that concept
+  for reqMeths -> (name, ty)
+    builder.add_field(#pub, name, ty)
+  -- We now have a struct with a field for a pointer to each required method
+  V = builder.build()
+
+-- Extracts the needed methods from a type into the appropriate vtable
+let vtableinst = pure fn T: type, C: concept type -> v: comptime* conceptvtable(C) =
+  assert T >= C, "T must satisfy C"
+  -- @static will be a function to create a new static once per callsite (returned by ptr)
+  v = @static(conceptvtable(C)) 
+  -- Each concept would store information about which methods must exist and their definitions
+  -- it would be stored in reqMeths. Note we don't need an @ prefix since concepts can't have
+  -- statics on their own
+  let reqMeths = C.reqMeths
+  for reqMeths -> (name, _)
+    v.deref.@fields[name] = T.@statics[name]
+    -- @fields is a property which maps name -> field, @statics is the same for a type's statics
+    -- (which functions are). Since name is comptime known, we can also know the type of the field/static
+    -- at comptime
+
+-- Essentially a "fat pointer". Holds a pointer to the instance and to the vtable for that type
+let conceptptr = fn inst: *_, C: concept type -> vtable =
+  let T = inst.@pointedType -- convenience property for getting T in *T
+  assert T >= C, "T must satisfy C"
+  vtable.@type =
+    var builder = @TypeBuilder.init(#struct)
+    for C.reqMeths -> name
+      builder.add_func(name, fn self )
+  vtable.self = inst
+  vtable.vtable = vtableinst(T, C)
+
+let
+  IStack = pure fn T: type -> I = concept:
+    var
+      s: @This
+      t: T
+    assert s.push(t).@typeof == void
+    assert s.pop(t).@typeof == T
+    assert s.len.@typeof == usize
+  SimpleStack = pure fn T: type -> S = struct:
+    field data: array(128, T) = []
+    field stack: slice T = []
+    let len = property fn self: @This -> l = self.stack.len
+    let push = fn self: ref @This, new: T =
+      self.stack = self.data[0..self.len+1]
+      self.stack[self.len-1] = new
+    let pop = fn self: ref @This -> old: T =
+      old = self.stack[self.len-1]
+      self.stack = self.data[0..self.len-1]
+var stack = [
+  =SimpleStack(usize)=
+]
+var fatPtr = conceptptr(stack.addr, IStack(usize))

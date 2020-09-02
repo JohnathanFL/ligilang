@@ -1,0 +1,92 @@
+-- This is to try and completely define type arithmetic for all operators
+-- and types of types.
+
+-- Note that this uses more than a few .@members which may or may not end up being used.
+-- Treat those like pseudocode.
+
+-- Other proposals/samples may or may not be in sync with these. This is to be considered the
+-- one true source for how the semantics should go.
+
+
+-- Add structs together to combine them
+let MyVec2 = struct { field x: f32, y: f32 }
+let MyVec3 = MyVec3 + struct { field z: f32 }
+assert MyVec3.@field["x"] != #None
+-- Struct addition:
+-- Is not associative
+-- - the fields are placed in the order of the addition
+-- Cannot shadow fields between lhs and rhs
+-- Addition of a struct with no fields results in an "extension"
+-- - Extenions may implicitly convert to their original type
+
+-- TODO: Should the extension be changed to `l mod r`? Then you're "mod"ifying `l`?
+-- This would read nicely, and disambiguates from `l + r`, but may not be as logical.
+
+
+-- Add enums together to combine them
+let Meals = enum (#Breakfast, #Lunch, #Supper)
+-- Even though we could theoretically make it `type + anyenum`, I'd prefer to keep the requirement
+-- of a type on the rhs for consistency
+let EatingTimes = Meals + enum #MidnightSnack
+-- Enum addition:
+-- - Is associative
+-- - Acts like the union of two sets
+-- - For additions that do not add new enums, the struct extension rules hold
+-- - For additions of `s = l + r`, `l` and `r` may implicitly convert to `s`
+
+
+-- Multiply a type by a usize
+let TupOf5 = bool * 5
+assert TupOf5 == (bool, bool, bool, bool, bool)
+-- In cases where the result tuple size can be deduced, `_` may be used
+let (x, y, z, w): usize * _ -- `_` may be deduced as 4
+
+
+-- Enums may be subtracted
+let EatingTimes = enum (#Breakfast, #Lunch, #Supper, #MidnightSnack)
+let Meals = EatingTimes - enum #MidnightSnack
+-- Enum subtraction:
+-- - Is non-associative
+-- - Is defined as set subtraction
+-- - In `s = l - r`, `s` may implicitly convert to `l`
+-- - Does not remove statics found in the rhs
+
+
+
+-- `in` for a type and a concept may be read as "implements", or "is in the set of types which implement"
+let IStack -- = concept: ...
+let StackImpl -- = struct: ...
+assert StackImpl in IStack
+
+-- `in` for enums may be read as "is a subset of" (does not rely on how lhs and rhs were created)
+assert Meals in EatingTimes
+-- As a sugar:
+assert #Breakfast in Meals
+-- is the same as
+assert enum #Breakfast in Meals
+
+
+
+-- Typeclass-styled stuff:
+
+-- `|` between two types acts like Haskell typeclasses - Creates a new concept which matches either
+-- `|` between two concepts combines them
+-- `|` between a type and a concept extends the concept
+let Numeric = (f32 | f64 | f128) | usize | isize | concept:
+  assert @This.@typeKind == #Int
+assert usize in Numeric
+assert i1 in Numeric
+assert f32 in Numeric
+let Character = u8|u16|u32
+assert 'C'.@type in Character
+
+-- `&` follows the rules for `|`, but instead creates a new concept which requires both to match
+let Integer = concept { assert @This.@typeKind == #Int }
+let SignedNumeric = (f32|f64|f128) | Integer & concept { assert @This.@intKind != #Unsigned }
+
+-- `~` makes a concept which must not match the input concept/type
+let UnsignedNumeric = Integer & ~concept { assert @This.@intKind != #Unsigned }
+-- Note that ~SignedNumeric would actually also match bools and such
+
+-- Currently, I can't see a reason for implementing `^` (xor) for typeclasses, as I can't think of a good
+-- usecase where you want to accept a type which implements one but not the other, without knowing which

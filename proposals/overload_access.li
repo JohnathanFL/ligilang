@@ -1,0 +1,29 @@
+-- This is to specify allowing overloading unused accesses:
+-- With this, we could define a pointer in pseudo-userspace like:
+
+let ptr = pure fn T: type -> P: type = usize + struct:
+  -- If we had some sort of magical @deref to get a `ref T`
+  pub let deref = property fn self -> realSelf = @deref(self)
+  -- An accessResolver would be either pre- or post-checking
+  -- Pre-checking would check the resolver before trying to use standard resolving
+  -- Post-checking would check the standard resolving (fields and such), *then* use the function
+  -- - This would still use @accessResolver for names which exist but are private
+  -- This usage of an ADT is why we don't do the new \op style
+  @accessResolver = #PostCheck: fn self: @This, name: comptime anyenum -> res = self.deref.@field[name]
+  let commonBinOverload = macro op = overload [
+    -- @binary creates a new binary call node
+    macro lhs: @This, rhs: @This = @binary(op, lhs.deref, rhs.deref),
+    macro lhs: @This, rhs: T = @binary(op, lhs.deref, rhs),
+    macro lhs: T, rhs: @This = @binary(op, lhs, rhs.deref),
+  ]
+  let commonUnaOverload = macro op =
+    macro self: @This = @unary(op, self.deref)
+  let
+    \+ = commonBinOverload(#+)
+    \/ = commonBinOverload(#/)
+    \* = commonBinOverload(#*)
+    \- = commonBinOverload(#-) + commonUnaOverload(#-)
+    \mod = commonBinOverload(#mod)
+    \? = commonUnaOverload(#?)
+    -- and so on
+  

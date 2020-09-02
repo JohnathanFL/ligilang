@@ -1,0 +1,31 @@
+-- This is a change to the underlying syntax of Ligi
+
+-- Essentially, we'll now allow arbitrary sigils, like so:
+let x = 1 -=- 2
+-- This also means that sigils are now parsed based on whitespace.
+-- Thus, `a * -2` is not the same as `a *- 2`
+
+-- You'll also be able to strop a sigil as a word.
+-- This will take over from the old @overloads[#...] nonsense.
+-- New overloading:
+\-=- += fn a, b -> c = (a - b) == (b - a)
+\-=- += fn a: bool, b: bool -> c: bool = (a xor b) == (b xor a)
+-- (non-standard sigils will have only a basic `fn _,_ -> _ = @compileerror(...)` defined by default)
+
+-- As part of this, you can also now to sigil labels:
+let addTag = #+
+
+-- In essence: Sigils are now arbitrary strings made up of:
+-- `~!^-+*/|&=<>.`
+
+-- Reserved sigils (whether non-overloadable or simply not available as operators):
+-- `->`, `.`
+
+-- This will also come with getting rid of `=>` as "then". We'll move back to using `{}` for simple stuff.
+-- It's just as clear and doesn't introduce new parsing
+
+
+-- This ought to be a help for macros:
+myTableMac: -- it's yer what, mac?
+  key => val
+  key2 => val2
