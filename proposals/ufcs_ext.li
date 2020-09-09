@@ -1,0 +1,33 @@
+-- This is to further extend ideas on UFCS from previous proposals
+
+-- In the latest version of the lexer/parser, you're able to use arbitrary binary/unary sigils,
+-- like so:
+let \++ = pure fn a, b -> c = a + b + b -- \sigil makes a sigil into a word
+assert b == a ++ b -- `++` is an arbitrary sigil, with its precedence determined based on Nim-like rules
+assert #++ == #++ -- You can also make tags out of sigils now
+
+-- Given that, you're also able to use them as unary operators
+let \++ pure fn a -> b = a + 1
+assert ++1 == 2
+
+-- I have no plans to allow arbitrary infixed words, but I intend to allow the following:
+
+-- All words can be parsed as unary function calls.
+let neg = pure fn a -> b = -a
+assert neg 1 = -1
+-- This does not reset precedence, so
+assert neg 1 + 2 == 1 -- not -3
+
+-- A word with `:` after it *does* reset precedence for the rest of the expression
+-- (i.e it starts parsing a new expression from prec 0)
+assert -3 == neg: 1 + 2
+-- have to put -3 on the left, because
+-- `neg: 1 + 2 == -3` is `neg(1+2 == 3)`
+
+-- As always, `::` is the tight-binding pipeline operator:
+assert 1::neg == -1
+
+-- I plan to introduce `:>` as a loose-binding pipeline operator
+-- It would simply be a normal binary operator that passes things along
+let checker = pure fn a -> res = a == -1
+assert -2 + 3 :> neg :> checker
