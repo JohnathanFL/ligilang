@@ -1,0 +1,28 @@
+-- This is a proposal I thought up while thinking about React's way of keeping structures immutable.
+-- Although the reasons aren't quite there in Ligi, as macros could take care of such things, I
+-- thought it could be kinda cool to have something that facilitates the idea
+
+-- This proposal is simple: If a return bind has the same name as a parameter,
+-- then the parameter is implicitly copied into that return bind.
+
+-- Example for a vector:
+let Vector3 = (f32, f32, f32) + struct:
+  let len = property pure fn (x, y, z) -> l = @sqrt(x**2 + y**2 + z**2)
+  let normalized = fn self -> self = -- self the parameter is copied into self the return bind
+    let len = self.len
+    self.(x, y, z) /= len -- thus `self` the symbol is available for assignment
+    
+  -- In order to make the changes seen outside, you still have to explicitly assign it back
+  -- (i.e it doesn't modify the parameter, it just copies parameter->return and makes the name always refer to
+  -- the return)
+  let normalize = fn self: ref @This -> _ =
+    self = self.normalized()
+
+
+-- In short, this proposal is just a sugar that replaces things like
+let foo = fn a -> newA =
+  newA = a
+  -- ...
+-- with
+let foo = fn a -> a =
+  -- ...
