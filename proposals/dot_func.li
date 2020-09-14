@@ -1,0 +1,25 @@
+-- This is a proposal to remove some ambiguity regarding functions used without `()`
+
+
+-- Right now, you can do
+printf "Hello, world!\n"
+-- without `()`
+
+-- However (officially)
+say_hi
+-- simply returns the function itself, no call
+
+-- This proposal would make it so that the above calls the function, while
+say_hi.fn
+-- returns a reference to the function
+
+
+-- This allows more "command-styled" functions when you want to keep things broken down,
+-- but find all the `()` to be useless:
+let main = fn args -> res =
+  init_instance
+  get_device
+  make_swapchain
+  bake_pipelines
+  -- ...
+
