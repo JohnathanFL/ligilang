@@ -1,13 +1,9 @@
--- This sample is just a collection of random mini-samples that don't really
--- warrant their own files. Mainly intended to give a general overview of Ligi.
-
-
 -- Basic primer:
 -- `--` is a line comment
 -- - It used to be a `(:` terminated by `:)`, so don't be surprised if you see random `:)` lying around 
 -- Indentation matters
 -- Semicolons aren't used
-
+-- assert is a builtin statement. It panics if its condition is false
 
 let x = 10 -- constant declaration. `let` is a "bind specifier"
 assert x.@type == usize -- usize is default type for int literals. @type is a property of all things
@@ -22,313 +18,227 @@ let w = -- A block after an assignment op is evaluated and its result becomes th
     w *= 2
     myVar -= myVar / 2
 -- myVar is now out of scope
-let a
-a = 20 -- Ligi only cares that a `let` is assigned to once. The first assignment gives its type.
+
+-- Basic literals
+
+-- Strings
+let s = "Hello, world!" -- quoted
+assert s.@type == str -- `str` is `slice const u8` extended with some string helpers
+
+-- Raw string. Starts from `\\ ` (not including the space) and goes to end of line
+let s = \\ Hello, world!
+-- raw strings add newlines between consecutive raw strings
+let s =
+  \\ #include <stdio.h>
+  \\
+  \\ int main() { return 0; }
+
+-- There aren't actually numeric literals, they're all just words.
+-- That's what allows naming things `2xMSAA` or similar
+
+let x = 10 -- integer (usize by default)
+let y = -10 -- Infers isize if needed
+
+-- Floating point literals are actually just `.` accesses into integers.
+-- They're (intended to be) resolved based on a regex of what's accessed
+let d = 10.0 -- f64 (double) by default
+let f = 10.0f -- a "dot number" access that ends in an `f` is inferred as `f32`(float)
+
+let (b1, b2) = (true, false) -- bool
+
+-- anyenum (may represent any enum *present in the program*)
+-- (you will be able to solidify anyenum values for ABI stability in the future)
+let a = #Hi
+assert a == #Hi
+assert a.@type == anyenum
+
+-- Array literal
+let ar = [0, 1, 2] -- =type= is optional
+assert ar.@type == array(3, usize)
+-- Struct literal
+let vec3 = [.x = 0, .y = 0, .z = 0]
+-- =type= is optional, if type cannot be inferred then it is an anonymous struct
+
+-- Tuples
+let t = (0, false, "Hello")
+assert t.@type == (usize, bool, str)
 
 
--- Functions take the form `fn <args> -> <result bind> = <body>`
--- If in doubt, you can always use `res` or `result` for the result's name.
--- It's better to use somethning descriptive, though.
+-- Calls and accesses
+-- Functions can be called like unary operators (at the same precedence)
+printf "Hello, world!"
+-- `()` or `[]` directly following a function are interpreted as calls and indexes
+printf("Hello, {}!\n", "Rito") -- printf(str, str), not printf tuple(str, str)
+-- Remember that these are the same precedence as unary operators:
+let double = pure fn a -> b = a + a
+assert double 5 + 1 == 11
 
+-- To reset precedence, use `:`
+assert 12 == double: 5 + 1 -- resets for the rest of the expr, so we needed to swap 12 to the left
 
--- IsEven. It should be its own package, but we'll include it here :)
-let is_even = pure fn x: usize -> isEven:bool = x mod 2 == 0
--- No need to specify types. Functions can be generic by default
-let is_even = pure fn x -> isEven = x mod 2 == 0 -- (This will now work with anything you can `mod`)
-
--- You can overload using the `overload` unary op with an array of functions
-let is_int = overload [
-  fn x -> isInt = x.@type.@typeInfo.isInt, -- First element is the default
-  fn x: usize -> isInt = true, -- Functions are considered in reverse order
-  fn x: isize -> isInt = true,
-  fn x: f32 -> isInt = false,
+-- `.` is field access or method call
+let Foo = struct: -- Structs are covered later
+  field x: usize, y: usize
+  let bar = pure fn self: @This -> result = self.x * 10
+let x = [
+  =Foo=
+  .x = 10,
+  .y = 20,
 ]
+assert x.y == 10
+assert x.bar == 100
+-- You can swizzle with `.`
+assert x.(x, y) == (10, 20)
+-- Swizzling also applies to all members of a tuple (only a non-extended tuple)
+let a = (x, x, x)
+assert a.y == (20, 20, 20)
 
 
-assert 1::is_int()
--- `::` is similar to `|>` from functional languages, but binds tighter than unary.
--- It places its lhs as the first argument to the lhs
--- Thus,
-assert 1::is_int() == true
--- is not interpreted as
-assert 1::(is_int() == true)
+-- `.` can only call a method declared inside the type. For external methods, use `::` or `:>`
+-- `::` is at the same precedence as `.` and passes the left as the first argument to the right
+assert 5::double == 10
+-- `:>` is like the classsical pipeline operator from functional languages (`|>`)
+-- Precedence binds looser than everything but assignment ops
+assert (5 :> double) == 10
 
--- `:` is similar. It places its rhs as the last argument to the lhs.
--- Mostly useful for macros or "command" style function calls
-printf: "Hello, world!"
+-- Control structures
 
-
--- Ensure that `A < x < B` (A=10, B=30)
--- `_` is used in a range to mean "type.max" or "type.min", where `type` is the type of
--- the other side of the range. Thus, in this case it's "usize.min" and "usize.max"
--- This will likely eventually become its own special type of range ("max" or "min" ranges)
-assert x in (_..10, 31.._)
+-- Wherever a block is allowed, it can be replaced with a block in `{}`, as in
+if x
+  then
+-- becoming
+if x { then }
+-- Thus you can do Pythonic or C-styled at your discretion
 
 
--- If statements:
-if true -- note the lack of `:`. Python programmers beware.
-  if false
-    printf: "I don't execute"
-  else
-    printf: "I do"
+-- If
+if x
+  do_this
+elif y
+  do_other
 else
-  printf: "I don't execute"
-
--- You can also put things on one line, using `{}`
-let x = if y { 1 } else { 2 }
-
-
--- Fizzbuzz
--- `elif` is the ligi version of `else if`
--- `..=` is an inclusive range
-for 0..=100 -> i
-  -- arithmetic op of 1:many takes the cartesian product
-  if i mod (3, 5) == (0, 0) { printf: "FizzBuzz" }
-  elif i mod (3, 5) == (0, _) { printf: "Fizz" }
-  elif i mod (3, 5) == (_, 0) { printf: "Buzz" }
-  else { printf("{}\n", i) }
-  finally
-    -- Only executes if a non-else executes
-    printf("\n")
-
--- Of course, that was pretty wordy. Why not only type the left side once?
--- `when` lets us take a bunch of `if` statements of the form `lhs <binary op> rhs` where the lhs is always the same
--- and write the lhs only once:
-for 0..=100 -> i
-  when i mod (3, 5)
-    -- `is` implies `==` after it, but you could also use other binary comparison ops
-    -- (Note that precedence doesn't apply to the `==` here. it's `lhs == <entire rhs>`)
-    is == (0, 0) { printf("FizzBuzz") }
-    is (0, _) { printf("Fizz") } 
-    is (_, 0) { printf("Buzz") }
-    else { printf("{}\n", i) }
-    finally { printf: "\n" } -- Same `finally` rule as with `if`
-
-
--- You can iterate over zipped iterators with a tuple:
-for (0..100, 100..200) -> (i, j)
-  assert i == j - 100
--- You can iterate over successive ranges (of the same type) with commas:
-for 0..100, 500..600 -> i, iterationNumber -- i is the actual captured value
-  if iterationNumber >= 100
-    assert i == iterationNumber + 500
-  else
-    assert i == iterationNumber
-
-
--- From Rosetta code
--- (I plan to implement `**` as a power operator)
--- Good god this is an ugly thing to write in any language
-let x = 5, y = -5, z = -2
-var sum = 0, prod = 1
-let ranges = (
-  (-3..=3**3).step(3), -- .step on a range to modify its step (obv)
-  (-7..=7).step(x),
-  555..=550-y,
-  (22..=-28).step(-3),
-  1927..=1939,
-  (x..=y).step(z),
-  (11**x ..= 11**x + 1)
-)
--- `...` is called "spread". It takes a container of known size and makes its callsite act as if the items in that
--- container had been placed there directly, with commas between them.
-for ...ranges -> j
-  -- Number types will have basic builtin properties like their absolute values
-  -- No reason to make more stdlib functions for such simple things
-  if prod.abs < 2**27 and j != 0
-    prod = prod * j
-printf(" sum= {}", sum)
-printf("prod= {}", prod)
-
-
--- Fibonacci
-let fib = pure fn n -> f = when n
-  is > 2 { fib(n - 1) + fib(n - 2) }
-  else { 1 }
-
-
--- Make and initialize a struct
-let Food = struct:
-  -- This is just a normal block of code
-  field -- `field` is a bind specifier, like `let` or `var`
-    name: str
-    calories: usize
--- Type of a compound is specified like `=Type=`
-let turkey = [=Food= .name = "Turkey", .calories = 1000]
-
-
--- Store an arbitrary enum
-let t = #Taggy
-assert t.@type == anyenum 
-assert t == #Taggy
--- Note that the tag (the part after #) can be any ligi word or sigil, including reserved words
--- If you want to restrict anyenum to a particular subset of values, you need a full enum
--- Internally, they're stored as a `usize` that maps into a HashMap(usize, str)
--- You'll be able to make a stable ABI with them eventually (e.g you can guarantee that #Taggy is 0 for
--- all compilations) for serialization purposes
-
-
--- Make an enum
--- `enum` at the start of a statement is a bind specifier. `enum` in an expression is a unary op
--- This is so you can specify things inside the enum declaration
--- Long form:
-let Meal = enum:
-  -- Could also combine these into one `enum Breakfast, Lunch, Supper` line
-  enum -- Enum at the beginning of a statement is a bind specifier
-    Breakfast
-    Lunch
-    Supper
-
--- Shortest form:
-let Meal = enum (#Breakfast, #Lunch, #Supper)
--- The above can assign values, but cannot set types for algebraic data types
-
-let m = Meal.Breakfast
--- or
-let m: Meal = #Breakfast
-
--- Make an algebraic data type:
-let Health = enum:
-  enum Dead
-  enum Alive: usize
-
-let h: Health = #Alive(100)
-assert ( -- We need `()` to split a single expression over multiple lines
-  h != #Dead
-  and h == #Alive -- Comparison against an anyenum (#Word) checks only the tag
-  and h == #Alive(100) -- Comparison against a full enum literal (#Word(vals)) checks tag and vals
-  and h == #Alive(_) -- Comparison against a sink (`_`) is always true, so this just checks the tag
-  and h != #Alive(99)
-  and h.Health == 99 -- Can also access it like a field. This would fail if h was #Dead
-)
-
--- An even better version of the above, using ranged enums:
-let Health = enum {
-  @tagType = usize -- similar to enum class Health : size_t {} in C++
-  alias val* = rawTag -- .tag stores the anyenum of the enum, .rawTag stores the actual in-memory value
-  enum Dead = 0
-  enum Alive = 1..=100
-}
-var h = (=Health= 1)-- or 1.as: Health
-assert h == #Alive and h.val == 1
-h.val -= 1
-assert h == #Dead
--- Thus, you can have a sort of "named range", as well as an algebraic data type that stores
--- its state and its inner value in one field
-
-
--- Mutually recursive...
-
--- Functions:
--- (these funcs aren't supposed to make sense)
-let foo: (fn n: usize -> nn: usize), bar: (fn u: usize -> b: bool)
-foo = pure fn n -> nn = if bar(n) => n * 10 else => foo(n + 1)
-bar = pure fn u -> b = if u > 100 => true else => foo(u + 20) > 100
-
--- Structs:
--- You can also do the above and below in "one" statement using an init block, rather than a forward declaration
--- This is the preferred way, as it clearly delimits the "recursive zone"
-let (Stmt: type, Expr: type) =
-  Stmt = enum:
-    enum
-      Expr: Expr
-      Assert: Expr
-  Expr = enum:
-    enum
-      Bin: (*Expr, anyenum, *Expr)
-      Una: (anyenum, *Expr)
-      Word: str
-      Block: slice Stmt
-
-
--- Find largest element
-let ar = [12, 5, 123, 64, 1235, 654]
-let largest: ref const usize = -- A `ref T` is basically the same as a C++ `T&`, except it's initialized with a ptr
-  var l = ar[0].addr
-  for ar -> el
-    if el > largest
-      l = el.addr
-  largest = l -- A `ref` must be initialized only once
-
--- After a `ref T` is initialized, it acts exactly like a `T`
-assert largest == 1235
-assert largest.addr == ar[4].addr
-
--- Reverse an array in place
-var ar = [12, 5, 123, 64, 1235, 654]
-for ar[0..ar.len/2] -> el, i => (el, ar.rev[i]) = (ar.rev[i], el)
--- .rev is a special property defined on arrays/slices that indexes in reverse.
-
--- Rotate an array in place n slots
-var arr = [12, 5, 123, 64, 1235, 654]
--- The naive solution: Rotate n times in a row
-let rotate = fn ar: ref _, n -> _ = when n
-  is 0 {}
-  is 1
-    for (ar[0..ar.len], ar[1..ar.len]) -> (x, y)
-      (x, y) = (y, x)
-  else
-    for 0..n { rotate(ar.addr, 1) }
-
-
--- Sort an array: Simple selection sort
-let sel_sort = fn items: slice _ -> _ =
-  for items -> x, i
-    for items[i..items.len] -> y
-      if y < x
-        (x, y) = (y, x)
--- Unit test (run with `li test`)
-test "sel_sort"
-  var ar     = [1, 6, 2, 3, 7, 1]
-  let sorted = [1, 1, 2, 3, 6, 7]
-  ar::bubble_sort()
-  -- Don't ya love zipped iteration
-  for (ar, sorted) -> (x, y) => assert x == y
-
-
--- List Interface
--- Ligi uses concepts to define "interfaces". By convention, we follow the `I` naming scheme.
--- Ligi follows Nim's concept of a "concept" definition, for the most part
--- Ligi just checks to see if the concept's block can pass type checking. Additionally,
--- comptime code (like asserts) are evaluated.
-let IList = fn T: comptime type -> L = concept:
-  -- @This is defined inside here, just as with struct and enum, and is the type
-  -- we're checking against the idea of a List 
-  var list: @This -- Only checks type checking, so we don't need to give a value
-  var el: T, optEl: ?T
+  do_else
+finally
+  did_this_or_other -- Executed if any non-else branch is taken, intended for cleanup
+-- If checking an optional, you can capture the inner value
+let x: ?usize = 10
+if x == #Some -> inner { assert inner == 10 }
+-- #Some is `?T`'s implicit capture, so you can also just do
+if x -> inner { assert inner == 10 }
   
-  list.push(el)
-  optEl = list.pop()
-  list[0] = el -- check for both indexing and indexing as `ref T`
-  -- A type which satisfies a concept is at least as good as it. Thus >= is `implements`
-  assert list.insert(0, el).@type >= builtin.IResult(void)
+
+-- When (`if` with a common lefthand side ("lhs"))
+if x == y
+  do_1
+elif x == z
+  do_2
+else
+  do_3
+-- becomes
+when x -- `x` is called the lhs
+  is y
+    do_1
+  is z
+    do_2
+  else
+    do_3
+-- `is` implies `==`, unless another valid comparison op is present
+when x -> xVal -- you can also capture the value of the lhs (in case of a complicated expression)
+  is in 0..100
+    do_0_100
+  is > 1000
+    do_over_1000
+  -- ...
+  else
+    do_else
+  finally -- finally also works
+    was_0_100_or_over_1000
+
+
+-- All loops can capture a counter that gives the iteration number
+
+-- Infinite loop
+loop -> i
+  printf("{}\n", i)
+
+-- Conditional loop (can capture values)
+let x: ?usize = 10
+while x -> xVal, i -- xVal captured from the condition, i is iteration number
+  printf("x is {}, for the {}th time\n", xVal, i)
+
+-- Range loop
+for 100..200 -> iCapt, i -- iCapt is the value from the range, i is iteration number
+  assert iCapt == i + 100
+
+-- Unit testing
+let is_even = pure fn a -> res = a mod 2 == 0
+test "is_even"
+  assert is_even 2
+  assert not is_even 3
 
 
 
--- Overloaded functions
-let describe = overload [
-  fn b: bool => printf("It's a bool"),
-  fn i: isize => printf("It's an int"),
-]
-describe: true --= It's a bool
-describe: -1 --= It's an int
+let a
+a = 20 -- Ligi only cares that a `let` is assigned to once, not where it happens
 
 
--- Overloading operators
-let Vec2 = struct:
-  field x: f32, y: f32
-  @overloads[#Add] += pure fn lhs, rhs -> res = [ .x = lhs.x + rhs.x, .y = lhs.y + rhs.y ]
 
 
--- Can multiply types to make a tuple
-let (v1, v2): 2*Vec2 =  ([.x = 1, .y = 2], [.x = 2, .y = 1])
-assert (v1 + v2) == [.x = 3, .y = 3]
--- Of course, the above is better accomplished by just using a tuple (f32,f32) and letting the
--- builtin overloads handle it:
-let Vec2 = (f32, f32) + struct:
-  -- You can directly unpack a tuple argument
-  let len = property fn (x, y) -> l = @sqrt(x*x + y*y)
-let (v1, v2): 2*Vec2 = ((1, 2), (2, 1))
-assert (v1 + v2) == (3, 3)
-let l = v1.len
+-- Basic Types
+--- Numerical
+---- Integers
+-- You can have arbitrarily sized integers (a la Zig)
+let 1bit: u1 = 1 -- or 0, no other possible values
+let massive: u1024 = undef
+---- Floats
+-- You have f16, f32, f64, and f128
+--- `bool` for booleans
+--- `char`, which is a `u32` for representing UTF-32
 
+
+-- Making your own types
+--- Structs
+let Vec3 = struct: -- `struct` is a unary op, `:` lets you call it on a block
+  field x: f32, y: f32, z: f32 -- `field` is a bind spec like `let` or `var`
+  -- @This refers to the current type we're making
+  let add = pure fn lhs: @This, rhs: @This -> new: @This = [
+    .x = lhs.x + rhs.x, .y = lhs.y + rhs.y, .z = lhs.z + rhs.z
+  ]
+--- Enums
+---- Option 1
+let Meal = enum ( #Breakfast, #Lunch, #Supper )
+let m = Meal.Breakfast
+assert m == #Breakfast -- can compare against anyenums
+---- Option 2
+let Option = enum:
+  enum
+    MSAA: usize -- "type" of an enum is the union's inner type for that tag
+    Res: (usize, usize)
+    Fullscreen: bool
+var o: Option
+-- An anyenum followed by a tuple or compound literal (`[]`) specifies the inner value
+o = #MSAA(4)
+o = #Res(1920, 1080)
+assert o != #Fullscreen(false)
+
+
+--- Concepts
+let IStack = pure fn T: comptime type -> C = concept:
+  -- @This in a concept is the type we're testing
+  var s: @This
+  var el: T
+
+  -- `concept` typechecks its body
+  el = s.pop
+  s.push(el)
+-- Concepts match using `in`
+assert SomeStack in IStack(str)
+-- You can also do typeclass styled concepts:
+assert usize in ~void -- Is usize not void?
+assert usize in (u1 | i1 | usize)
+-- `&` can be used to combine concepts
+assert SomeStack in (~Indexable & IStack(str))
+
+
+-- The rest of the language will be covered in various other samples. This is already a bit long
+-- for "basics"
