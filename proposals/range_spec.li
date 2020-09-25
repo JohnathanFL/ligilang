@@ -1,0 +1,46 @@
+-- This is to try and specify a datatype for ranges
+-- Some constraints:
+-- - Any pair of types (`T..V`) should coerce to the first type
+--   - Exception: If `T` is `void`
+-- - Each type should have one possible Range associated with it
+--   - i.e we shouldn't have a LowerUnboundedRange, NormalRange, etc
+-- - Things should be as performant as possible
+
+-- To facilitate ranges (and other things), Cmp will contain a special enums
+-- #True and #False, comparison against which is always true and false,
+-- respectively
+let Cmp = @typeof(1 <=> 1)
+let Range = pure fn T: comptime type -> R = struct:
+  field (low, high): (T, T)
+  field (lowCmp, highCmp): (Cmp, Cmp)
+
+  let \in = pure fn needle, haystack -> res: bool =
+    use haystack.(low, high, lowCmp, highCmp)
+    return (low <=> needle, needle <=> high) == (lowCmp, highCmp)
+    -- Could be like (#Lt, #Lt) == (#True, #LtEq) for `_..=100`
+
+let range_overloads = fn upper: Cmp -> overloads = overload [
+  -- This will come with the "`()` as void's value" proposal
+  -- Using the "concepts from binary ops" proposal
+  pure fn left: void, right: ~void -> range = [
+    =Range(right.@type)=
+    .(low, high) = (undef, right),
+    .(lowCmp, highCmp) = (#True, Cmp)
+  ],
+  pure fn left: ~void, right: ~void -> range = [
+    =Range(right.@type)=
+    .(low, high) = (left, right),
+    .(lowCmp, highCmp) = (#GtEq, Cmp)
+  ],
+  pure fn left: ~void, right: void -> range = [
+    =Range(right.@type)=
+    .(low, high) = (left, right),
+    .(lowCmp, highCmp) = (#GtEq, #True)
+  ],
+  -- We don't allow construction of 
+]
+
+let
+  \..  = range_overloads #Lt
+  \..= = range_overloads #LtEq
+

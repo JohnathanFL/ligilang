@@ -57,3 +57,6 @@ let say_hi = fn name { printf("Hello, {}!\n", name) }
 -- (similar to what I do allow with `if x {then}`)
 -- even with blocking rules, but decided that keeping the `->` style for all is more consistent
 
+-- Update as of 09/14/20:
+-- `()` (the void value) now takes the place of `_` for void funcs
+let say_hi = fn name -> () = printf("Hello, {}!\n", name)

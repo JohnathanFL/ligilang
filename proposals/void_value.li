@@ -1,0 +1,15 @@
+-- This is a simple proposal:
+-- We have `void` the type, and `_`(sink) the value.
+-- I had originally thought of making `_` *be* void, but
+-- I've realized it would be better to have a `sink` type for it.
+
+
+-- This proposal allows the empty tuple `()` to be used in both expressions
+-- and binds as a "void value".
+
+-- For example, this will supplant the current `_ =` we used for void functions
+-- That syntax makes no sense because `_` is otherwise known to take any
+-- type, as in `_ = some_fn_to_discard`
+let printf = fn fmt: comptime str, ...args -> () =
+  -- ...
+  return
