@@ -18,6 +18,15 @@ assert neg 1 = -1
 -- This does not reset precedence, so
 assert neg 1 + 2 == 1 -- not -3
 
+-- Problem with this syntax: It breaks the current control structure syntax for single lines:
+if x {printf "Hey"} -- is it `if(x){printf("hey")}` or `if(x(printf("hey")))`
+-- To fix this, we may have to reintroduce `=>`, though I'm not a fan of this
+-- Alternatively, we could remove `:` as an operator. We could then do
+if x: printf "Hey"
+-- and replace old `:` style with
+assert -3 == neg <: 1 + 2 -- <: to match the :> pipeline
+-- I'm currently in favor of this alternative.
+
 -- A word with `:` after it *does* reset precedence for the rest of the expression
 -- (i.e it starts parsing a new expression from prec 0)
 assert -3 == neg: 1 + 2
