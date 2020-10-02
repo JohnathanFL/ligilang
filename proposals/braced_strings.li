@@ -1,0 +1,30 @@
+-- This is a simple lexing proposal
+-- It would add a new string literal, which starts with `\` and one of {, [, or (
+-- It would internally keep track of nesting for {}, [], and ()
+
+-- The primary purpose of this literal is to allow capturing other languages without needing cumbersome
+-- \\ or "" strings
+
+-- In short, they're raw `\\` strings without the ability to ignore starting indent
+
+
+-- Use case: Embedding other languages:
+
+-- Taking advantage of the `...` operator to expand the returned blocks into the result area
+let c = macro input: comptime str -> res = ...{
+  -- Parse C code and figure out res.@type,
+  -- then create a function that gets called to get the result (if any)
+  ...real_c_function
+}
+
+c \{
+  #include "stdlib.h"
+  // C comments would work inside here because \{} is actually a string
+  void say_hello(const char* name) {
+    printf("Hello, %s!\n", name);
+    // Obviously, the \{} lexer would have to keep track of nesting for { and  }
+  }
+}
+
+-- I may end up replacing both `\\` strings and braced strings with a more unified,
+-- pseudo-HEREDOC styled strings
