@@ -1,0 +1,73 @@
+-- This is to document how expressions are done in general.
+-- For more granular info on semantics, see other features.
+
+-- `.` and `.>` are the access operators
+-- `.`  always means member and/or method access
+-- `a.>b` is simply a sugar for `a :> b` that works at access precedence. (UFCS-ish)
+
+-- Builtin binary operators have the following precedences (lower in the list binds tighter):
+-- - Assignment ops (`=`, `+=`, `-=`, `*=`, `~=`, `|=`, `&=`, `^=`, `>>=`, `<<=`, `>>>=`)
+-- - Lambda (`=>`)
+-- - Logical ors (`or`, `xor`)
+-- - Logical and (`and`)
+-- TODO: Should Equality/Comparison/Membership all be the same level?
+-- - Equality (`==`, `!=`)
+-- - Comparison (`<=>`, `<=`, `>=`, `>`, `<`)
+-- - Membership (`in`, `notin`)
+-- - Ranges (`..`, `..=`)
+-- - Bitwise ors (`|`, `^`)
+-- - Bitwise ands (`&`)
+-- - Bitshifts (`<<`, `>>`, `>>>`)
+-- - Addition (`+`, `-`)
+-- - Multiplication (`*`, `/`, `mod`, `rem`)
+
+-- Builtin unary ops are:
+-- - Logical not (`not`)
+-- - Arithmetic negation (`-`)
+-- - Bitwise negation (`~`)
+-- - Expansion/unpacking (`...`)
+
+-- Technically, `$`(pattern) is currently a unary op. In the future, however, it will likely
+-- be separately parsed to allow for specifying types.
+
+-- Technically, unary ops are actually just builtin functions.
+
+-- With the exception of Lambda and the Assignment ops, all operators are understood to be pure.
+-- This means that even when you overload them, the overloads must also be pure.
+-- If you want impure behavior, you'll need proper methods/functions.
+
+-- Parsing expressions in general is based on the type of expression:
+-- - An expression can be #Blockable or #Unblockable, setting whether it can have implicit blocks
+-- - An expression has a style
+--   - Each of the below styles implies restrictions from the types above it.
+--   - #Full -- Allows Colon calls, commas, assignment ops, etc.
+--     - If there's a comma call *and* an assignment op, it must be on the right side
+--   - #NoAssignment -- Assignment ops don't work
+--   - #NoCommas -- May not have commas outside `()`, `[]`, or `{}`
+--     - e.g disallows `printf "Hello, {}", "world"`
+--   - #NoColonCalls -- `:` cannot be used as a call operator (allows for `:type:`)
+
+-- Parsing in general is done like so:
+-- 1. parse a an expr
+--   - parse lowest binary precedence above assignment and keep going down recursively
+--     - parse a unary expression (allowing any sigil/non-keyword to be a unary op)
+--       - Case of current token:
+--         1. Control structure keyword: Custom parsing per-structure (callback)
+--           - TODO: Write `features/parser_plugins.li` when we have that stuff at all spec'd out
+--         2. LParen/LBracket: Parse a compound tuple/array/struct literal (inside is #Unblockable, #NoAssignment)
+--           - All three can have a `:type:` typedesc at their beginning
+--           - Arrays are enclosed in `[]`
+--           - Tuples are enclosed in `()` and consist of normal expressions
+--           - Structs are enclosed in `()` and consist of bind locs
+--         3. LBrace: Parse a block (inside is a series of indented, newline terminated statements)
+--           - If the block starts with a `:` (after any whitespace), then a `:type:` typedesc is parsed.
+--         4. Word
+--       - If the last was {2,3,4}, then try to parse an access expression (repeat these while possible)
+--         - If the next token is any access op, parse the op and either a word or a swizzle
+--           - See `features/swizzle.li` for more
+--         - If the next token is {LParen,LBracket}, then parse a function call or index, respectively.
+--         - If the next tokens are (Indent, <any_access_op>), then start an indented access expr
+--       - If not #NoColonCalls and next is a `:`, then parse another #NoAssignment expr and treat it as a call
+--         - Because this will continue until a Newline/Comma/etc, this unambiguously end the current expression
+-- 2. If #Full, then try to parse an assignment op. If we get one, either parse a block or goto 1 for rhs
+--   - Parse rhs as #NoCommas

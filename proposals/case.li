@@ -1,0 +1,8 @@
+-- This is a proposal to remove "enum" as a bind specifier, and replace it with "case"
+-- This is directly inspired by reading some Swift code.
+
+-- It's a simple enough change:
+let Meal = enum
+  case Breakfast, Lunch, Supper
+-- And, obviously, short enums are still simply
+let Meal = enum (#Breakfast, #Lunch, #Supper)

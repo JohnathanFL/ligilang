@@ -1,0 +1,456 @@
+-- In essence, this change is about relaxing the grammar such that it can:
+--   a. Be easily extended
+--   b. Parse even incorrect usages, allowing better error messages at evaluation time.
+--     - Example: `for x: y` is syntactically valid, but will error like
+--       "for's expression must be of the forms `$x in y` or `$x notin y`"
+-- Codename: Operation nimrod (because we're getting stupidly close to Nim's lexing)
+
+-- Note that this proposal is somewhat WIP and
+-- many of these ideas were developed while writing it.
+-- As such, part of the document refers to using `!` instead
+-- of `!`. I've decided to leave it as is, as a record
+-- of how some of this was developed (as I never comitted
+-- anything).
+
+-- Summary:
+-- - No "unary operators", just builtin functions.
+-- - Whitespace between object and parens/brackets matters.
+--   - `word(a, b)` is the same, but `word (a, b)` is parsed as `word((a, b))` (tuple, not args)
+--   - Required to make ex-unary ops into functions
+-- - `:` for prec reset calls AND control structures
+--   - Mildly confusing, but we'll restrict using both at the same time.
+--   - `:` is just so nice to type
+-- - `=>` for lambdas without return locations
+--   - Args specified as a single bindloc. Multiple args are a bind-tuple (`.(arg1, arg2)`)
+--   - Allows for removing some boilerplate when passing functions
+-- - `()` (void-tuple) is an acceptable bind location
+--   - Allows for void-taking lambdas (`.() => printf "Hello, world"` is `fn -> () = printf...`)
+-- - Other than `fn`, we no longer use `->`
+--   - I'd like to replace this too, but can't find a good way of differentiating return location from args
+-- - Patterns now use `$` instead of `!`
+--   - `!` is just too recognizable as "not" and patterns will be commonplace.
+--   - We'll probably find another non-"not" use for `!` later
+-- - Patterns are now expressions (`$` can start a new pattern-bind anywhere)
+-- - Patterns are now used for all capturing (other than fn result locs)
+--   - As a result of the above, we can't do loop counters without dedicated functions
+-- - We officially use currying for arrays/etc (`array(10) usize`)
+--   - `array(N, T)` adds parens around everything. Take, for example, `array(4, array(4, usize))` vs
+--     `array(4) array(4) usize`. The latter is more readable (imho) because of the tighter parens.
+-- - Binds are now expressions
+--   - `using` is now a unary op
+--   - Bindlocs (leading `.`, e.g `.bind`) are now common expressions
+--   - This may be exploited to allow adding new fields without the full `struct: ` preamble.
+-- - Bind locations now parse full expressions. `let x + y` is syntactically correct but semantically incorrect.
+--   - `:` is no longer special here. `let x: y` is just as semantically valid as `let x(y)` or `let x y`
+--     - Obviously, don't be a dumdum. Write it how it makes sense. The eventual autoformatter will likely stabilize it
+-- - The parser shall be specified as programmable in the form of hooks for "control words"
+-- - `for` now takes the form `$patt in expr`, but will parse any full expression.
+--   - Must be validated in 
+-- - Access ops can be placed in a block immediately after an
+--   accessible item, one per line.
+-- - This file contains proof-of-concepts for how the AST
+--   can be represented. From now on, any potential AST designs
+--   should be written out in Ligi first, then translated.
+--   This is to help advance the language itself even while it
+--   can't be compiled. Dogfooding before we even cook it.
+
+
+-- Long form:
+
+-- Comments are now officially specified as being in markdown. It's how I've been writing them all anyway, so why not?
+-- Comments which begin with `=` (`--=`) are still officially doc comments. They get attached to whatever node they
+-- come before. `--` comments are still to be officially ignored by the compiler.
+-- - Tools may then be used to render a file with comments annotating it. IDEs could even render the markdown inline.
+-- - XML formats (like C#) are ugly.
+-- - Exact formats for specifying which arg is which are yet to be determined. 
+
+
+-- `:` is back as a functional op (a: b: c is a(b(c)))
+-- Note that it actually adds to the last call (e.g `a(b): c is a(b, c)`)
+-- However, it is only allowable at the top-level. Thus, you can do
+let x = operation: a + b
+-- But not
+if operation: a + b: -- ambiguous. Will be parsed as `if operation then a + b(then)`
+  then
+-- to do the above, you have to
+if (operation: a + b):
+  then
+-- However, top level will not restrict stuff like
+let print_added = (.a, .b) => printf: a + b
+-- It will be resricted in the following situations:
+-- - Control statements (inside the control statement's expression)
+--   - What I mean by "its expression" is explained near the bottom of this file
+-- - Double-bounded type specs (`:type:`)
+-- It will be partially restricted (not allowing implicit blocks) in
+-- - Normal type-specs (`:type`) (because `= expr` can unambiguously end it)
+
+-- Additionally, I may follow Nim's example and restrict the `operation: a + b:` stuff,
+-- at least where controls are involved. That way you can either have
+-- - Multiple `:` calls on one line
+-- - A single control `:` on one line
+
+-- Additionally, `:` calls will be allowed to have multiple arguments:
+printf: "Hello, {}", get_name()
+
+-- Thus, `:` calls are for major arguments that would otherwise use `()`,
+-- and `func arg` style (unary op style) is for simple, 1-argument functions
+
+-- Implementation: `parse_expr` will simply have a param like
+let ExprKind = enum (
+  --= `func: arg` and `func: <block>` allowed
+  #Normal,
+  --= Only `func: arg` allowed
+  #NoBlock
+  --= Neither of #Normal's allowed
+  #NoColCall,
+)
+
+-- StoreIn will be kept for proper `fn` functions
+-- `fn` is preferred for major functions or those you want the implicit block for
+let add = fn a, b, -> c = -- this is implicit block
+  a + b -- in a block here
+-- Trying to use `=>` here would have been ambiguous, as in
+let add = fn a: usize, b: usize => c = a + b -- b: (usize => c) or b: usize -> c ?
+
+-- As a part of this change, bindlocs (`.loc:type`, `.(loc1, loc2)`, etc) are allowed in normal expressions.
+-- One of these styles preferred for using a function as a lambda.
+-- i.e when you don't need to provide types (though you still can)
+-- Named return value
+let add = .(a, b) => .c = a + b
+-- Implicit return
+let add = .(a, b) => a + b
+-- Since `{}` now accepts typedescs, we can "official-ize" the return type like so
+let add = .(a, b) => { :a.@type: a + b }
+-- Works with parens too
+let add = .(a, b) => ( :a.@type: a + b )
+-- No args
+let add = .() => printf "Hey"
+-- The `.` before the `()` matters. Otherwise, it would be `=>` with a lhs of values,
+-- rather than a bindloc, which is what determines that it's indeed a lambda.
+
+-- Function types are like
+void => void
+
+-- We'll use pattern matching for while loops, rather than `->`
+var iter = arr.iter
+while iter.next == #Some(!val):
+  printf("{}", val)
+
+-- We'll give in and use the `in` word for `for` loops
+for val in arr:
+  printf("{}", val)
+-- We may also be able to open this up to `notin` e.g for sets:
+let Flag = enum ( #A, #B, #C )
+let args: SetOf Flag = [#A, #B] -- pseudocode for some imaginary "SetOf" class
+for val notin args:
+  assert val == #C
+
+-- We may also be able to use patterns instead:
+for !val in arr
+  printf("{}", val)
+-- Thus opening things up to full pattern matching
+for #Valid(10, !val) in list:
+  printf("{}", val)
+
+when x:
+  is Some(!v): print v
+  else: printf "None"
+
+
+-- Unfortunately, this means we can no longer capture loop counters
+-- It also, unfortunately, removes when's lhs capture.
+
+-- I wish we could use `$` instead of `!`, but I already have that taken for macro expansions
+-- I may, however, decide to change that around, perhaps using `...` for all macro expansions instead.
+-- Example of how that would look:
+while iter.next == #Some($val):
+  printf val
+for $val in arr:
+  printf val
+for #Valid(10, $val):
+  printf val
+when x:
+  is #Some($val)
+
+
+-- This is also the change where we'll officially swap over to one of the new array syntaxes:
+let
+  arr: array(usize) 10
+  -- or
+  arr: array(10) usize
+
+-- I'm in favor of the latter because it reads better ("array of 10 usizes") and the former
+-- because it feels more logical syntactically
+
+-- Also, now that `case` has replaced `enum` as the discriminant specifier, we can make binds into expressions
+-- This also allows `using` to become a unary operator
+using let x = some_allocating_fn()
+
+-- This /could/ be used to allow us to check for a field/tag's presence in a struct/enum:
+let MSAA = enum (#2x, #4x, #8x, #16x)
+let Setting = enum
+  case Fullscreen: bool
+  case MSAA: MSAA
+assert (case MSAA: MSAA) in Setting
+assert (case MSAA) in Setting -- without specifying type
+assert (case MSAA: bool) notin Setting -- Wrong type, no match
+assert (case Volume) notin Setting -- Nope
+-- This will mainly be useful for concepts and other metaprogramming
+
+
+
+-- In short, this change to the language makes the parsable (not executable) syntax /much/ more flexible.
+-- For example, we can make `for` just parse any ol' expression:
+for x: printf "Wut"
+-- And then, in compilation, we can give a better error message, like
+-- Error on line 96: A for loop's condition must match the pattern `$val in expr`.
+
+
+-- This also makes the language easier to extend. For example, for an `until` loop:
+-- - Mark `until` as a control word (like `if` or `for`)
+-- - Register a handler for `until` statements
+-- - The parser now automatically parses its condition
+-- - Your plugin to the language is triggered when the compiler sees an `until`
+-- - Do your validation/codegen/etc
+
+-- I feel like I keep taking steps to make this ever closer to a new Nim
+
+
+
+-- Implementation plans:
+-- Any word can be tagged as a "control word", which allows them to register a custom handler for its parsing.
+
+-- Bind statements will be considered distinct from control structures, but will have similar extensibility
+
+-- Thus, the Atom can be represented as such:
+
+--= An underling (or the main branch)
+let Arm = struct ( .kind: StrID, .expr: ? *Atom, .body: ? *Atom )
+let Atom = enum:
+  case
+    Word: StrID
+    Str: StrID
+    --= We don't treat `#Tag(inner)` as a call because it's so common
+    Tag: (StrID, ? *Atom)
+    --= Locs, Init
+    Loc: (*Atom, *Atom)
+    --= A #Tup composed of #Loc is eligible to be a struct
+    --= Kind, Type spec, members
+    Compound: (enum(#Tup, #Array, #Block), ? *Atom, ArrayList Atom)
+    --= Kind and all arms
+    Control: (StrID, ArrayList Arm)
+    --= Cmd, Args
+    --= Includes things like `let`, where the args are Locs
+    Cmd: (StrID, ArrayList Atom)
+    
+    Placeholder: StrID
+    Unit
+    Sink
+    None -- So we don't need any direct `?Atom`
+
+    -- And the evaluated Atoms for things we can
+    -- put in global lists
+    Fn: FnID
+    Type: TypeID
+    Const: ConstID
+    Static: StaticID
+
+-- And the parser will have a definition like so:
+let
+  ParseFn = (*Parser) => Atom
+  -- actions shall be a member of the Parser struct
+  actions: HashMap(StrID) ParseFn = hash_map: -- Assuming a magic macro to make HashMaps from `{key=>val}`
+    "fn" => (.self) => {
+      use self.(match, try_match, next_is)
+      match "fn"
+      -- ...parse the rest of a `fn`
+    }
+    "when" => (.self) => {
+      match "when"
+      let lhs = self.parse_expr
+      -- and so on
+    }
+  
+
+
+-- Under the above definition, `assert` is (ignoring pointers and simplifying some stuff)
+assert: expr 
+#Control( #assert, [ (:Arm: .kind = #assert, .expr = #None, .body= #Some #Word(#expr) )  ])
+
+-- `:` because the first part would be reserved for the message.
+-- That would allow asserting an entire block, wheras `assert expr: msg` wouldn't
+assert "msg": expr
+#Control( #assert, [ (:Arm: .kind = #assert, .expr = #Some #Str "msg", .body = #Some #Word #expr) ] )
+
+-- `break` will similarly be
+break: expr
+#Control( #break, [(:Arm: .kind = #break, .expr = #None, .body = #Some #Word #expr)] )
+break #label: expr -- We'll probably need to add dedicated 'labels or similar soon.
+#Control( #break, [(:Arm: .kind = #break, .expr = #Some #Tag(#label, #None), .body = #Some #Word #expr)] )
+
+-- If can similarly be
+if x: xx
+elif y: yy
+else: zz
+#Control(
+  #if,
+  [
+    (:Arm: .kind = #if, .expr = #Some #Word #x, .body = #Some #Word #xx),
+    (:Arm: .kind = #elif, .expr = #Some #Word #y, .body = #Some #Word #yy),
+    (:Arm: .kind = #else, .expr = #None, .body = #Some #Word #zz )
+  ]
+)
+
+-- For `when`'s delayed binary op, the plan is that we'll have a custom parser that
+-- parses it out like so:
+when x
+is y: yy
+is in z: zz
+else: ww
+#Control(
+  #when,
+  [
+    (:Arm: .kind = #when, .expr = #Some #Word #x, .body = #None),
+    (:Arm: .kind = #is, .expr = #Some( #Cmd(#==, [ #None, #Word #y ]) ), .body = #Some #Word #yy)
+    (:Arm: .kind = #is, .expr = #Some( #Cmd(#in, [ #None, #Word #z ]) ), .body = #Some #Word #zz)
+    (:Arm: .kind = #else, .expr = #None, .body = #Some #Word #ww)
+  ]
+)
+-- Thus, we parse a binary expression and leave the LHS as the Atom #None, to be filled by
+-- the `when` evaluator as needed.
+
+-- `fn` can then be similarly represented using a tuple for the args in the .expr and
+-- a #Loc for the return
+fn a, b -> c = a + b
+#Control(
+  #fn,
+  [
+    (:Arm:
+      .kind = #fn,
+      .expr = #Some #Compound(
+        #Tup,
+        [
+          #Loc(#Word #a, #None, #None),
+          #Loc(#Word #b, #None, #None),
+        ]
+      ),
+      .body = #Some #Loc(
+        #Word #c,
+        #None,
+        #Cmd(
+          #+,
+          [
+            #Word #a,
+            #Word #b,
+          ]
+        )
+      )
+    )
+  ]
+)
+
+
+-- Finally, we need to address binary/unary operators and blocks
+-- Obviously, we can just use `:` for unary operators to allow blocks,
+-- since they're no longer any different from normal functions
+
+-- I'd like to still allow things like this for `.`:
+a.
+  .b
+  .c
+  .d
+a :>
+  :> b
+  :> c
+  :> d
+-- Essentially, `binop <block>` requires that every line in the block
+-- begin with that binop.
+-- This then also allows
+a +
+  + b
+  + c
+  + d
+-- Unfortunately, this is very confusing to read.
+-- We may be able to keep that and just restrict it to certain operators, but that
+-- also seems like it'll be rather confusing.
+
+-- I think I'll require `()` for the method chaining
+a.(
+  b
+  .c
+  .d
+)
+-- or
+(
+  a
+  .b
+  .c
+)
+-- Unfortunately, this is somewhat confusing, as you can also do
+a.(
+  b,
+  c,
+  d
+)
+-- which is completely different.
+
+-- I think I'll treat access operators (`.` and `.>`) as different from binary operators.
+-- Access operators shall be able to do the pseudo-blocked behavior:
+a.> -- `.>` here can be any access operator
+  .>c -- `.>` here can be any access operator
+  -- and so on
+-- This will be allowed because all access ops are on the same prec level
+-- For example, this would be confusing:
+a +
+  + b
+  * c -- (a + (b * c)) or (a + b) * c ?
+
+-- Another possibility is
+a
+  .b
+  .c
+  .>d
+-- We allow 2-token lookahead. Whenever we hit #Indent after an accessible expr, we check if the next
+-- token will be an access op. If so, we allow the above.
+-- This will be controlled by the #NoBlock (and #NoColCall, by extension) parse_expr setting.
+-- Additionally, each line will be a completely separate expression. Thus, in
+a
+  .do_thing a, b, c
+  .access_result
+-- `.access_result` operates on the result of `do_thing`, not on `c`
+
+
+
+-- I may additionally take a page from Nim's book and make the following change:
+let foo = overload [
+  .arg => printf "Got one",
+  (.arg1, .arg2) => printf "Got two",
+]
+foo(1, 2) -- Got two
+foo (1, 2) -- Got one
+foo [1] -- Got one
+foo[1] -- Error: No overload of `foo` takes 0 arguments (Tries to do foo()[1])
+
+-- In other words, whitespace between function and arguments instead passes a tuple
+-- This will require another lexer overhaul, but it might be nice, as it also allows ops like
+-- `overload`.
+-- to actually be parsed as anything else, as `overload[]` would normally be an
+-- indexing operation on the value `overload` in previously stated rules.
+
+-- TODO: Also specify named arguments.
+
+-- Another change is that I'd like to have "universal bind syntax", allowing full expressions for locations
+-- Essentially, what this means is that you can use any of these styles:
+let a: usize -- `:` is technically a call
+let a usize -- unary operator call for the same result
+let a(usize) -- normal function call
+-- Thus, "bind locations" simply becomes a normal function call.
+-- I'll also be exploiting this to allow using `+` as the public operator again:
+let +a: usize -- Parses as +(a(usize))
+-- So in essence, this change will make bind locations lean heavily on pattern matching.
+-- Thus, the following is *syntactically* valid
+let a + b
+-- but will error out in evaluation.
+
+
+-- Because bindlocs are now 

@@ -1,0 +1,72 @@
+-- Patterns are Ligi's way of binding values inline
+
+-- A pattern is technically any expression with `$word` or `_` in it.
+
+-- `$word` is used to create an inline bind that exists for the sub-expression's scope
+-- - Example: Pattern in an `if` statement's expression has the scope of its "then" block.
+-- - Use this for extracting things from structs/enums/tuples/etc
+-- `_` is used as a generic catch-all. It binds nothing.
+-- - Use this for discarding unwanted results. `_ = some_func()` is a common pattern.
+
+-- Examples:
+
+-- Extract a tuple
+let t = (0, 1, 2)
+if t == ($x, $y, $z):
+
+-- Extract inner value from an enum
+let Expr = enum: -- See also `features/enums.li`
+  case
+    Word: str
+    Op: str
+let e = Expr #Word "Hello"
+if e == #Op($o):
+  printf "Op was {}", o
+elif e == #Word($w):
+  printf "Word was {}", w
+
+-- Extract a struct's inner values
+let Vec2 = struct (.x: usize, .y: usize) -- See also: `features/structs.li`
+let v = (:Vec2: .x = 10, .y = 20)
+if v == (.x = $x, .y = 20):
+  printf "v.y was 20 and v.x was {}", x
+
+
+-- Using an iterator-like thing
+let iter = someCollection.iter()
+while iter.next() == #Some($v):
+  printf "Iterated over {}", v
+
+-- The "$pattern in expr" syntax is baked into the for loop's evaluation.
+let ar = [0, 1, 2, 3, 4]
+for $i in ar:
+  printf "Iterated over {}", i
+-- For more on how patterns work in for loops, see `features/loops.li`
+
+-- Functions can use patterns to get the type of a generic arg inline
+let both_args_same_type = fn a: $T, b: T -> c: T = a + b
+-- This can be exploited to restrict arguments to certain classes of types:
+-- `a` must be passed as a pointer (`.addr`)
+let a_by_ref_b_by_val = fn a: ref $T, b: T -> c: T = a + b
+-- `arr` must be an array ($N could also be `_`, since we don't use it)
+let set_ith = fn arr: array($N) $T, i: usize, val: T -> () = arr[i] = val
+
+-- Exactly what types can be extracted like this is still up for debate.
+
+
+-- In the future, I'd consider trying to add some more deductive abilities to patterns.
+-- As a dumb example, something like
+let x = 10
+if x + $y == 11: assert y == 1
+-- (Obviously the above is useless, but the idea could be useful)
+
+
+-- I'm considering allowing `$` to start a full bind, as in
+for ($i: usize) in arr:
+  continue
+-- Then you could reduce the number of `$`s needed, as in:
+for $(val, index) in arr:
+  printf "arr[{}] is {}", index, val
+-- And even do sub-pattern captures
+for $(val: $T, index) in arr: -- Look ma! I captured the captures!
+  printf "arr[{}] is a {} of value {}", index, T.@typeName, val

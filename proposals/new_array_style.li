@@ -1,4 +1,4 @@
--- This is to document a possible new array type syntax
+-- This is to document a possible new array type syntaxes
 -- This proposal is by no means finalized.
 
 -- Currently, we do arrays like so:
@@ -13,3 +13,16 @@ let mat: usize::array(4)::array(4) -- ...
 -- or
 let mat: usize::array((4, 4)) -- ...
 -- just like you could before (as array((4,4), usize))
+
+
+
+-- The final winner is to be function currying style:
+let ar: array(3) usize -- array(3)(usize)
+-- This allows for a syntax close to Zig's `[3]usize` brevity/clarity without needing
+-- new syntax/strange semantic rules to allow `[3]` to be an array operator.
+-- This will also work with N-dimensional arrays like so: (using lambdas for brevity)
+let Mat4x4 = .N => array(4, 4) N
+-- so `array` is defined something like
+-- 
+let array = fn [...args] -> F =
+  

@@ -1,0 +1,48 @@
+-- Enums are Ligi's implementation of algebraic data types
+
+-- Shortest form for creation:
+let Meal = enum (#Breakfast, #Lunch, #Supper)
+-- Standard form uses the `case` bind type.
+let Meal = enum:
+  -- Can set the backing type
+  @tagType = u2
+  case
+    -- Can set internal values directly, including out of order
+    Breakfast = 2
+    Lunch = 1
+    -- Can have cases with the same internal value
+    Supper = 0
+    Dinner = 0
+-- Enums can also contain values inside their cases
+let Atom = enum:
+  case
+    Word: str
+    Sigil: str
+
+-- You can set enums based on `.` accesses in the simple cases
+let m = Meal.Breakfast
+-- Or use casting
+let m = (:Meal: 2) -- 2 == Breakfast
+-- Or use function calls on enum tags for complex cases
+let a = Atom #Word("Hello") -- Parens here optional. Could also be `[]` for an array, or a struct lit
+
+-- You can access the anyenum value from `.tag` and the actual in-memory value from `.val`
+assert m.tag == #Breakfast -- redundant, enums can already implicitly compare anyenum
+assert m.val == 2
+
+-- You can also set enums based on ranges (i.e "named ranges")
+let Health = enum:
+  @tagType = u8
+  case
+    Dead = 0..=0
+    Critical = 1..25
+    Hurting = 25..50
+    Okay = 50..80
+    Fine = 80..100
+    Perfect = 100
+var h = (:Health: 0)
+assert h == #Dead
+h.val += 1
+assert h == Critical
+-- and so on
+

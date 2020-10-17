@@ -1,0 +1,12 @@
+-- This is to re-unify the type specifier for compounds
+
+-- First we had `:type:`, then it was `=type=`. We're going back to `:type:` now
+-- that `:` is back to being purely punctuation, and we're adding another change:
+let x = {:usize:
+  let y = 10
+
+  y
+}
+-- ...you're now able to specify what type a block should evaluate as
+
+-- Now, `()`, `[]`, and `{}` all support the same syntax at their beginnings

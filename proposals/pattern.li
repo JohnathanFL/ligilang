@@ -1,0 +1,34 @@
+-- This will be an extension over the type_params.li proposal
+
+-- Currently, we can do things like
+let x: !T = 0
+assert T == usize
+-- to capture an unknown type
+
+
+-- This would extend that into a proper language feature.
+-- `!` would become known as the "pattern operator", and could be used for inline unpacking:
+let x: ?usize = 10
+when x
+  is #Some(!val)
+    assert val == 10
+  else
+    assert false
+-- Or even
+if x == #Some(!val)
+  assert val == 10
+
+-- This feature would actually be replacing the type_params.li proposal, as this would already cover things like
+let foo = fn a: ref !T -> () =
+  assert T == usize
+foo(0)
+
+
+-- For the implementation, I plan to make an actual comptime "pattern" type (different name) that gets returned
+-- anytime there's a `!X` in an expression. The actual type would just the the AST for that expression, annotated
+-- with where the placeholders should be.
+-- This may even enable stranger patterns like
+if 10 == !x + 4
+  assert x == 6
+-- Although the above is basically useless, the point is that this change enables much more complex patterns,
+-- if we can write solvers to deduce what they must be.

@@ -1,0 +1,72 @@
+-- `for`, `while`, and `loop`
+
+--# Basics:
+
+-- `loop` is a simple, infinite loop
+loop:
+  printf "A" -- AAAAAAAAAAAAA...
+
+-- `while` is a classic conditional loop
+var x = true
+while x:
+  if someCond: x = false
+-- Capturing can be done as normal with patterns
+var iter = someCollection.iter
+while #Some($v) == iter.next():
+  continue
+
+
+-- `for` is a range-based loop
+let ar = [0, 1, 2, 3, 4, 5]
+for $i in ar:
+  printf i
+
+--# `break` and `continue`
+-- The syntax of `break` is `break [tag] [":" expr]`
+-- If present, the expr becomes the value of the loop, as in:
+let x = loop:
+  break: 10
+assert x == 10
+-- The "tag" is reserved for future. I may go back to using `#tag` to tag loops/blocks,
+-- or I may use "`" or "'" or similar to mark them. Regardless, the general syntax of that will be
+`outer loop:
+  `inner loop:
+    break `outer
+-- Break is organized as tag /then/ expr because tag is expected to be the more common case.
+-- If it turns out to be the opposite, we may reverse them.
+
+-- The syntax of `continue` is simply `continue [tag]`, where tag is once again reserved for future use.
+while true:
+  if true:
+    continue
+  printf "I'm never executed!"
+
+--# `else` and `finally` with loops
+-- All loops can have `else` and `finally` attached to them
+-- `else` is only evaluated if the loop is broken early with `break`
+-- - If the break had a value with it, then you can capture that value with a pattern like `else $v:`
+-- `finally` is only evaluated if the loop is allowed to finish naturally
+-- The last values of any loop captures are still bound in both `else` and `finally`
+-- Naturally, a `loop` loop cannot invoke its `finally`, as it's infinite and has no natural end.
+
+-- Examples of this:
+-- Find the greatest of an array
+let ar = [0, 6, 1, 2, 60]
+let indexOf2: ?usize =
+  -- Assuming that arrays have some "enumerated" to iterate indices as well
+  for ($v, $i) in ar.enumerated:
+    if v == 2:
+      break: i
+  else $brokenVal: -- You can capture the value broken with
+    assert brokenVal == 3
+    brokenVal -- You must re-yield it for it to be the value of the loop
+  finally:
+    null -- "2" not found in the array, must not be there
+
+
+-- I also plan to allow alternative syntaxes to somehow be used with `for`.
+-- For example, you might be able to do this for a set:
+let Meal = enum (#Breakfast, #Lunch, #Supper)
+let set = Set(Meal).from: [#Lunch, #Supper]
+for $meal notin set:
+  assert meal == #Breakfast

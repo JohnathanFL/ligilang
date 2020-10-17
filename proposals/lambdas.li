@@ -1,0 +1,29 @@
+-- This is a basic proposal to add `=>` lambdas
+-- Now that we've
+-- - Changed `=>` to `:` for representing "then"
+-- - Allowed `.loc:type` to be an expression on its own
+-- We should have the syntactic elements needed for proper shorthand funcs (lambdas)
+
+-- Note that when I refer to a bind-tuple, I mean an anonymous struct
+
+-- We'd first make any `=>` with a non-bind-tuple lhs the type of a function
+let foo = fn a: usize, b: bool -> c: str = ""
+assert foo.@type == (usize, bool) => str
+
+-- Then we'll make `=>` with a bind-tuple for a lhs into a lambda
+let foo = (.a: usize, .b: bool) => ""
+assert foo.@type == (usize, bool) => str
+-- Note you can't directly specify the return type.
+let Vec2 = struct (.x: f32, .y: f32) + struct
+  -- These are only for trivial functions, like
+  let \+ = (.lhs, .rhs) => (:@This: .(x, y) = lhs.(x, y) + rhs.(x, y))
+  -- where the return type is obvious
+
+-- These will *not* support implicit blocks like the return bind of a function,
+-- however. Thus, `{}` are needed for blocks
+
+let do = () => {
+  printf "Hello, world"
+  printf "Goodbye, world"
+}
+do

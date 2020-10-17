@@ -60,3 +60,12 @@ let say_hi = fn name { printf("Hello, {}!\n", name) }
 -- Update as of 09/14/20:
 -- `()` (the void value) now takes the place of `_` for void funcs
 let say_hi = fn name -> () = printf("Hello, {}!\n", name)
+-- Also, I plan on using `=>` for function types
+assert say_hi.fn.@type == undef => void
+
+-- Update as of 10/16/20:
+-- `=>` has been introduced for allowing shorter functions ("lambdas")
+let say_hi = fn name -> () = printf("Hello, {}!\n", name)
+-- can now be written as
+let say_hi = .name => printf("Hello, {}!\n", name)
+-- or .(name), or .name:type, etc

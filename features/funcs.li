@@ -1,0 +1,140 @@
+-- Functions and lambdas
+
+-- Functions are defined in one of two ways: `fn` or `=>`
+
+-- Use `fn` for major functions
+-- Note that braced blocks could also be substituted for indented blocks
+
+-- All `fn` functions follow the form
+-- "fn" {comma_sep_args} "->" return_bind "=" block_or_expr
+
+-- `()` is used for a void return bind
+let say_hello = fn -> () = printf "Hello, world!"
+
+-- The most idiomatic way to write a function with a simple return type:
+-- For a comptime-known size N and a runtime value `fill`, make an array filled with `fill`
+-- Compliments to Odin for the excellent idea of binding generic types at declaration
+let new_array = fn N: comptime usize, fill: $T -> arr: array(N) T =
+  arr = undef -- Unassigned variable can never be read from
+  for ref $v in arr: v = fill
+  return arr
+-- The above is equivalent to the C++ (using a struct to return arr by value)
+\\ template<size_t N, typename T> struct Array { T arr[N]; }
+\\ template<size_t N, typename T>
+\\ Array new_array(T fill) {
+\\   Array res; // Ligi doesn't let us ignore the fact that this is undefined by default
+\\   for(auto& v : res.arr) v = fill;
+\\   return res;
+\\ }
+-- A bit more concise than C++, eh?
+
+-- For a return value named `z`, `return x` is equivalent to `z = x; return`
+-- Thus, if you just assign to the return value, `return` is optional
+let new_array = fn N: comptime usize, fill: $T -> arr: array(N) T =
+  arr = undef -- Unassigned variable can never be read from
+  for ref $v in arr: v = fill
+
+-- Because the body is just an assignment block, the value of the block
+-- (the first non-void value) is also returned
+let new_array = fn N: comptime usize, fill: $T -> arr: array(N) T =
+  arr = undef -- Unassigned variable can never be read from
+  for ref $v in arr: v = fill
+  arr -- implicit return
+
+-- Instead of using a pattern to capture fill's type for use, you could
+-- just use `.@type` directly
+let new_array = fn N: comptime usize, fill -> arr: array(N) fill.@type =
+  arr = undef
+  for ref $v in arr: v = fill
+
+-- Or you could just assign to arr's `.@type` once in the body
+-- Note that any variable's type can only be assigned to once.
+let new_array = fn N: comptime usize, fill -> arr =
+  arr.@type = array(N) fill.@type
+  arr = undef
+  for ref $v in arr: v = fill
+
+-- Variation on the above
+let new_array = fn N: comptime usize, fill: $T -> arr =
+  arr.@type = T
+  arr = undef
+  for ref $v in arr: v = fill
+
+
+-- A (dumb) example of where you could use `.@type = ` instead:
+-- Assuming unsigned, parsing a comptime-known string as the smallest possible
+-- int type for that number (based on the length of the string)
+let to_num = fn s: comptime str -> n =
+  n.@type = when s.len:
+    is <= 2: u8 -- u8.max is 255 -> len == 3 -> all nums of len 2 fit in u8
+    is <= 4: u16 -- u8.max has a len of 5 -> ...
+    is <= 9: u32
+    is <= 19: u64
+    -- and so on. you get the idea. 
+  n = 0
+  for $c in s:
+    expect c in '0'..='9'
+    n *= 10
+    n += c - '0'
+
+-- As general rules:
+-- - If you just need the type of an argument directly, just use a $pattern
+--   - See `features/patterns.li`
+-- - If the type of the return value can be directly written (as above) and isn't too long,
+--   put it inline as a `: type` typedesc.
+-- - If the type of the return value is non-trivial/requires any logic, use `.@type = `
+
+-- - Prefer assigning to the result variable over `return x`
+-- - Prefer never using `return`, other than for simple series of `if x: return y` checks.
+--   - This makes it easier to add logic that affects all paths later
+
+-- In a function, defers are run AFTER the `z = x` of `return x` is run.
+let testy = fn -> res: str =
+  defer printf res
+  res = "Dumdum"
+  return "Hello, world!"
+testy -- Prints "Hello, world!"
+-- You can exploit this e.g to run assertions/expectations against the return
+-- - Contract programming for free!
+
+
+-- All function types follow the form
+-- expr "=>" expr
+
+-- Lambdas follow the form
+-- .bind_locs "=>" expr
+-- The bind_locs must be in a single tuple, as in `.(arg1, arg2, arg3)`
+-- In other words, it expands the outer tuple into a list of args.
+
+let add = .(a, b) => a + b
+-- If you want to assert a return type, remember that blocks/parens can use `:type:` syntax
+let add = .(a, b) => { :a.@type: a + b }
+let add = .(a, b) => ( :a.@type: a + b )
+-- You can also give types to these if you want
+let add = .(a: usize, b: usize) => { :usize: a + b }A
+
+-- `fn` can be seen as just be a sugar for the following pattern:
+let foo = .args => {
+  var res
+  -- ...
+  return res
+}
+-- becomes
+let foo = fn args -> res =
+  -- ...
+
+
+-- As general rules:
+-- - Prefer `fn` for "major" functions with lots of logic that can stand on their own
+-- - Prefer `=>` for simple lambdas only ever used e.g as arguments to functions
+
+-- Note that neither of the above allow capturing values (that would require implicit allocation)
+-- - The above may change in the future if I can figure out a nice way to work it into Ligi
+
+
+-- Some more general suggestions:
+-- - If a function's arguments need to satisfy some conditions, use `assert` or `expect` to test them
+--   if you don't want to do a full error return type like `!usize`
+-- - If a function's return type must always satisfy some conditions, use `defer assert` or `defer expect`
+--   to make sure they're always tested before returning
+-- - Make functions generic when you can, or at least only use concepts to restrict types

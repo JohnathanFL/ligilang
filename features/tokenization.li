@@ -1,0 +1,79 @@
+-- This is to describe how Ligi handles tokenization
+-- It's quite simple, really.
+
+-- - Tabs are disallowed anywhere but a string.
+-- - Only UNIX-style (\n) line endings allowed.
+
+-- There are 9 tokens: word, sigil, strop, tag, str, punctuation, indent, dedent, newline
+-- - Word: Anything that matches `[A-Za-z0-9_@]+`
+--   - When prefixed with `\`, it's a strop
+-- - Sigil: Anything that matches `(~|!|\$|%|\^|&|\*|-|\+|=|<|>|\.|\?|\||:)+`
+--   - With the exception of a lone `:`
+--   - When prefixed with `\`, it's a word
+-- - Tag: A `#` followed by a word, sigil, or a quoted string
+-- - Str:
+--   - A quoted string is a sequence of non-newlines enclosed in double quotes.
+--     - When prefixed with `\`, it's a strop
+--     - When prefixed with `#`, it's a tag
+--   - A line string is `\\` followed by a sequence of non-newlines
+--     - Multiple line strings in a row at the same indent are concatenated with newlines
+--   - A braced string is `\` followed by one of `{([`(the "opener"), chars, and one of `})]`(the "closer")
+--     - Lexer keeps internal state for the number of the openers added
+--     - Parsing of this string ends when the matched number of the closers equals the number of openers.
+--     - If there's a newline immediately after the opener, it's ignored.
+--     - If there's a newline immediately before the closer, it's ignored.
+-- - A "punctuation" is one of `(){}[];,`
+-- - For whitespace
+--   - Amount of leading whitespace for each line is tracked as `curIndent`
+--   - A stack of each `curIndent` is maintained
+--   - stack[0] is always 0
+--   - Upon moving over a line boundary and scanning past leading whitespace
+--     - If curIndent is greater than stack.top, then emit Indent
+--     - If curIndent is less than stack.top, emit Dedent then Newline
+--       - Well I'll be. Ligi has `\r\n` block endings.
+--     - If curIndent is the same, just emit a Newline
+
+
+-- Therefore:
+
+-- Words
+word x 1 @123 sdkfjsd for if 2xMSAA \+
+
+-- Sigils
++ ~ ! $+ ~!$%^&*-+=|?/ -- That last one is one massive sigil
+
+-- Strops:
+\if \"if" \"Hello, world"
+
+-- Tags
+#Hello #+ #~!$%^&
+
+-- Quoted strings
+"Hello, world" "Hello \n Newline"
+
+-- Line strings
+\\ Hello, world
+-- random comment
+\\ I'm still the same line string
+\\ And once again. C:\WINDOWS\Blah is a valid string.
+
+-- Braced strings
+\{C:\Windows\Blah}
+\{
+) does nothing
+}
+\(
+() nesting of openers/closers is tracked
+)
+\[
+Finally
+]
+
+Sameline
+Newline
+  Indented
+    Indented_again
+"Just emitted Dedent Newline Dedent Newline"
+
+-- Although it doesn't technically matter externally, a Ligi compiler should intern all strings and represent them
+-- as "StrID"s (usizes).
