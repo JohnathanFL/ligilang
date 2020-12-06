@@ -1,0 +1,22 @@
+-- This proposal overhauls macros
+
+
+-- The way we've currently done macros is the args are passed in completely un-evaluated until they're used,
+-- at which point they're evaluated each time they're used.
+
+
+-- Recently, I've overhauled Ligi's AST types to be more Lisp-ish. With this change, I'll also be
+-- changing the way macros work.
+
+
+-- Now, macros will implicitly keep their arguments as the type `@Atom`, which represents a node in the AST.
+-- To expand atoms, you'll use the `%` unary operator.
+
+-- TODO: More examples. For now, see proposals/with.li, which implements the new `with(x) fn` closure creation
+-- syntax using a new-styled macro.
+
+
+
+-- This proposal shall also specify the `@callingContext` variable, which shall be set in macros
+-- and shall point to the context (scope) that called the macro, allowing you to do lookups there
+-- e.g to take the value of a variable.

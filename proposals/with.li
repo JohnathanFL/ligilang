@@ -1,0 +1,125 @@
+-- This proposal defines the `with` operator, which shall be used to produce
+-- capturing "closures", as opposed to the dumb lambdas/procedures we have so far.
+
+-- Currently, Ligi functions can only operate on external variables that have some *known*
+-- address. For example, with global scopes (statics):
+var x = 0
+let inc = fn -> () = { x += 1 }
+inc()
+assert x == 1
+
+-- I plan to also allow this with functions that modify local variables but are used
+-- exclusively inside that function:
+let foo = fn -> func: (void => void) =
+  var x = 0
+  let inc = fn -> () = { x += 1 }
+  inc()
+  assert x == 1
+  -- Error: inc references the local variable `x` which won't exist after this function returns
+  return inc
+
+
+-- Introducing: the `with` operator, which works similarly to PHP's `use`.
+-- Exact syntax to be determined, but something like:
+let foo = fn -> func: (void => void) =
+  var x = 42
+  -- Works as a curried unary operator:
+  -- Fn form
+  let inc = with(x) fn -> val = { x += 1; x }
+  -- I'm not yet sure how to make this work with lambdas if I keep it as a curried unary.
+  return inc
+
+let inc = foo()
+assert inc() == 43
+assert inc() == 44
+assert inc() == 45
+
+-- What this will do internally is create something like this:
+let Inc_Struct = struct:
+  field x = 42
+  -- Imaginary call operator overload (Ligi doesn't allow it)
+  let \"()" = fn self: @This -> val = { self.x += 1; self.x }
+
+
+-- A little test of Ligi's comptime expressiveness:
+-- The with operator itself will work something like
+
+-- > Using the spread (`...`) operator and allowing you to spread as a list Atom
+-- > that contains all args
+-- > This will go along with making a `macro` just a function that takes its arguments as unexpanded atoms
+let with = macro ...args: @Atom -> extMacro =
+  -- Validate usage: Each arg is either `word` or `ref word`
+  assert args == #List $argsList
+  for $arg in args:
+    -- Where `like` is a method that compares an atom with an atom (which itself may contain patterns to extract with)
+    assert arg.like @list(#ref, $word)
+    assert word == #Word
+
+  -- Metaprogrammnig is far from perfectly specified. Treat the following almost like pseudocode.
+  -- @list will be a helper macro to make a new list atom. Assuming it treats tags as words by default.
+  var block = @list(#@block)
+  var set = HashSet(anyenum).init(@comptimeAlloc)
+  -- Create all the captured fields
+  for $arg in args:
+    -- A bind is of the list form (@bind, spec, bind1, bind2, ...), where bind is of the forms
+    -- `name`, `(name type)`, `(= name val)`, or `(= (name type) val)`
+    -- Considering using % to expand things. Expanding inside a macro uses the calling context.
+    -- @atom will essentially be used to "quote" its argument (i.e it's `macro arg: @Atom -> r = arg`)
+    block += @atom @bind(#field, @list(arg, @TypeOf %arg))
+
+  -- We'll only do it for `fn` in this example. `fn` is represented as `(@fn (args...) (= retval body))`
+  -- Assuming that `macro` can implicitly capture just like `when` allows us to explicitly do at runtime.
+  extMacro = macro func: @Atom -> result =
+    var newFunc = func -- arguments are immutable
+    let tempVar = @temp_var() -- Generates a new temp variable (to avoid collisions if we used `self` or similar
+    -- and the user also used `self` in their function)
+    func[1].prepend @list(tempVar, #@This) -- Add our `self` argument
+    for $arg in args: -- For a `with(x)`, replace all `x` in the function with `self.x`
+      func[2][2].replace arg, @list(#., tempVar, arg)
+    block += @atom @bind(#let, @list(#"=", #"()", func) -- Add our "overloaded call" operator
+    let Closure = @struct %block -- Call struct on block' expanded form to get a new type
+
+    -- Build an init expression for the new Closure
+    -- Init expressions for structs are just tuples of bind names (like `(:ty: .x = 1, .y = 2, ...)`)
+    var init = @atom (:Closure:) -- Tuple that initializes a Closure
+    for $arg in args:
+      init += @list(#.,  arg) -- Remember that `.x` on its own already expands as `.x = x` for inits
+
+    return %init -- Return an expression that initializes a new Closure
+
+
+
+-- Normally, capturing is done by value
+var x = 0
+let foo = with(x) fn -> val = { x += 1; x }
+assert foo() == 1 and x == 0
+assert foo() == 2 and x == 0
+
+-- However, I'll allow using `ref` to capture by reference
+var x = 0
+let foo = with(ref x) fn -> val = { x += 1; x }
+assert foo() == 1 and x == 1
+assert foo() == 2 and x == 2
+-- Obviously, ref and value can be mixed
+var x = 0, y = 0
+let foo = with(ref x, y) fn -> (valX, valY) = { x += 1; y += 1; (x, y) }
+
+
+-- Note that the closures themselves are still structs being passed around by value. Thus
+var x = 0, y = 0
+assert (with(x) fn -> () = ()).@typeInfo.size != (with(x, y) fn -> () = ()).@typeInfo.size
+-- (i.e closures aren't the same type/size)
+
+-- In order to pass them around, you'll have to allocate them on the heap manually (as is Ligi tradition)
+-- > Assuming std.Box acts a bit like a Rust Box<T> and that we have ICallable(...args, retType) interface that
+-- > acts a bit like C#'s Func<arg1, arg2, ..., ret> and looks for a `\"()"` method on a type to use.
+-- > Assuming `std.allocator` as *the* standard allocator. (likely redirecting to C malloc or similar)
+use std.Box
+var x = 0
+using let closure = Box(ICallable(void, usize))
+  .alloc std.allocator -- Set the box's allocator
+  .of: with(ref x) fn -> val = { x += 1; x } -- Set the box's value
+alias callable = closure.val
+assert callable() == 1 and x == 1
+-- The above doesn't have the best ergonomics though, so I may begin considering if I should allow overloading `()`,
+-- that way `Box` could overload `()` to be `self.val(...args)`

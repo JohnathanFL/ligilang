@@ -1,0 +1,13 @@
+-- This is to define the `%` operator
+
+-- Essentially, the `%` operator will expand an `@Atom` (AST node) in the current context:
+
+let add_1 = @list(#+, #x, 1)
+
+var x = 0
+let two = %add_1
+
+
+-- This is basically what the `$` operator did before I swapped it to being a pattern operator.
+-- There's still a possibility I might swap them back, but I'd prefer to keep them as-is since
+-- patterns will be widely used and I think `$` looks nicer and so I'd prefer widely things to look nicer.
