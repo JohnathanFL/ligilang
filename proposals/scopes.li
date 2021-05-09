@@ -1,0 +1,31 @@
+-- This is to re-add a proposal which seems to have been lost in a fresh installation.
+
+-- Essentially, we'll allow the language to directly expose scopes through `##` notation.
+-- Syntax is the same as for tags, except that there's an extra `#` on the beginning.
+
+-- With this proposal, we'll also remove `.` from the list of valid sigil characters, making `..` and `..=`
+-- special cases, along with access operators (`.`, `?.`, and `!.`)
+
+-- `##_` is the current context, `##/` is the root file's context, etc.
+
+-- Calling a scope name with a block results in a new block with that name for its scope:
+let y = ##foo:
+  let x = 10
+  break: ##foo, x -- `break` and `return` shall now technically just be functions. No special parsing.
+
+-- From here on out is basically glorified brainstorming. Scopes are by no means fully thought out.
+
+-- `##@` is the root scope currently being used to evaluate the code (i.e it contains builtins like `@if`)
+-- `##@fn` is the scope of the enclosing function. `##@fn.parent` or `##@args` is the scope where function args are set
+-- `##~` is the root scope of the current file
+
+-- A scope has a field named `vars` which is a struct of all variables declared in that scope, including
+-- those not declared yet at the point of usage.
+assert ##~.vars.y[0] == 10 -- Note we specify it as the first (0th) instance of y.
+
+-- Other than naming blocks and the root scope, this is primarily only intended to be a useful sugar for macro-writers.
+-- For example, Zig's root config stuff:
+let asyncMode = ##/.vars.asyncMode[0]
+
+
+-- Again, the above is only a very rough idea of what I want out of this and in no way final.

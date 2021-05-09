@@ -1,0 +1,12 @@
+-- This is to attempt to (experimentally) specify the @stack argument modifier:
+let fib = fn @stack n: usize -> res: usize =
+  assert n.len > 0 -- n is now actually a collection of all `n`s used in this series of recursive calls
+  res = when n[0]:
+    is < 2: 1
+    else: fib(n - 1) + fib(n - 1)
+
+
+-- I'm planning on only allowing this on direct recursion (as above) and only when the
+-- function's stackframe's size is comptime known.
+-- Alternatively, I may implement it as a linked-list-styled structure to allow gaps in the
+-- recursion.

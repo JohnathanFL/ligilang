@@ -1,0 +1,27 @@
+-- A quick and simple proposal for explicit tail call recursion.
+
+-- This proposal would have Ligi implement the `become` keyword, shamelessly stolen from Rust's RFC.
+-- `become` would behave similarly to `return`, except for the following semantics:
+
+-- 1. `become` enforces tail call recursion.
+let fac_impl = $(n: usize, i: usize) =>
+  if n == 0: return i -- `become i` could also work, but would be useless here.
+  else: become fac_impl(n - 1, i * n) -- TCO enforced here
+let fac = $(n: usize) => fac_impl(n, 1)
+
+-- 2. Any destructors queued from `using`, as well as any `defer` statements, execute _before_ `become`.
+--
+-- Without `become`:
+let foo = fn i -> i =
+  defer printf: "%d ", i
+  if i < 1: return
+  else: return foo(i - 1)
+foo(10) -- Will print "0 1 2 3 4 5 6 7 8 9 10 "
+-- With `become`:
+let foo = fn -> i = -- Will print ", world! Hello"
+  defer printf
+  if i < 1: return
+  else: become foo(i - 1)
+foo(10) -- Will print "10 9 8 7 6 5 4 3 2 1 0 "
+-- This is so we don't have to preserve any state between calls except that which is explicitly passed in.
+-- Passing a `using`'d var into a `become` tail call will also be an error.

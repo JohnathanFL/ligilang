@@ -1,0 +1,27 @@
+-- This wil serve as a sandbox for random, everyday snippets to be written in Ligi
+-- to help test Ligi's usability.
+
+-- I'll probably be placing a higher emphasis on LINQ-styled snippets, as I see them
+-- so often in my work.
+
+-- # Camelcase to pascal case, LINQ-style
+-- Only one allocation required, albeit an overallocation.
+var arena = std.allocs.Arena.init(std.allocs.pagedAlloc)
+let s = "my_var_name"
+let camelified = s
+  -- `str` shall implement both `IIter char` (iter glyphs, a la Rust) and `IIter u8` (iter codepoints, a la sanity).
+  -- The "default" one shall be `IIter u8`, so here we specify that we want the glyph-aware version.
+  .iter_chars()
+  -- aggregate(iter: IIter $T, seed: $U, agg: (accum: U, cur: T) => U): U
+  -- a `fn` with a name shared between argument and return value makes both the same variable.
+  -- Thus, we don't bother initializing the return values manually. Think of it almost like an `out` parameter.
+  -- Note that we initialize the string to have a capacity equal to that of the length of the original string, as we
+  -- know we are only removing characters.
+  .aggregate: (false, String.init(arena, s.len)), fn (shouldUpper, accum), c -> (shouldUpper, accum) =
+    if shouldUpper and c != '_':
+      accum.push c.asUpper
+      shouldUpper = false
+    elif c == '_': {} -- Do nothing
+    else: accum.push c -- Wasn't an `_` and we don't need to upperify. Just add.
+  .1 -- Extract just the real accum - the bool part was just for state as we iterated.
+

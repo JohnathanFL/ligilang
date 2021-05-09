@@ -42,3 +42,43 @@ let myAdder: extern (fn _:f32, _:f32 ->_:f32) = adder
 let myAdder2 = @as(extern fn _:f32, _:f32 -> _:f32, adder)
 -- or
 let myAdder3 = adder.@as(extern fn _:f32, _:f32 -> _:f32)
+
+
+-- Update as of 03/29: I'm leaning towards moving to `[]` (a la nim) for generic types.
+-- Reasoning:
+-- - It allows for type inference (more easily than `()`, anyway...)
+-- - It can still be implemented in a function-like manner
+-- - It can more logically allow for specializing certain generic combinations
+
+-- Notes:
+-- - This is only for generic types. Functions still use the normal implicit-is-generic stuff.
+-- - Functions will still be used for more complex generics.
+-- - Generic types shall be organized into "typesets". Thus, generics are simply indexing into a typeset.
+-- - Typesets shall have a `kind`, which is one of `#Struct`, `#Enum`, etc
+--   - This reduces surprises, as you can no longer get either a struct or an enum from a generic type invocation.
+
+-- Possible examples:
+
+-- Simple generic where no custom logic outside the type itself is needed:
+let Vec2 = struct[T]:
+  -- The above could also have more arguments (like `struct[T, U, V]`)
+  field x: T, y: T
+
+-- `struct[...]` is actually just a sugar for `struct fn ... -> RES:type = ....`. Thus,
+-- we can use that form directly for more complex logic.
+let Foo = struct fn T -> res:type =
+  -- As a part of this, we will also overloading the `()` operator.
+  -- This allows for implementing `struct` itself in userspace.
+  if T in SomeTypeclass:
+    struct:
+      field x: T
+  elif T in SomeTypeclass:
+    struct field y: T
+  -- ...or something...
+
+-- Usage:
+var v = (:Vec2[f32]: .x = 0, .y = 0)
+
+var f: Foo[i32]
+
+

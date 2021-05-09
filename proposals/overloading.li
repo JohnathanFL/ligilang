@@ -119,3 +119,7 @@ my_func += pure fn a, b, c, d -> void = printf("Womp womp")
 
 -- This feature can be used e.g to constrain overloads for Add/For/etc to make sure they're
 -- pure/taking functions/etc
+
+
+-- Implementation note: I plan to implement overloaded functions by generating a purely-comptime function
+-- which takes in max number of arguments of its children then matches them up.
