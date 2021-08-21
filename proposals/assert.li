@@ -14,3 +14,11 @@ assert true == user_input_func() -- Will error at runtime if input was false
 -- Proposal: Allow tagging asserts:
 assert true == true, "The laws of math are breaking down"
 -- The above would show in the logs like "15:1: Failed assert: The laws of math are breaking down"
+
+
+-- 2021/05/30: Officially changing the previously undocumented `expect` to be `require`:
+
+let comptime_known_fn = fn a -> () =
+  assert a != 10 -- Will fail if a is comptime-provable to be 10 or if a==10 in a debug/release-safe build
+  require a != 10 -- Will fail every time a is 10, no matter what. A higher security guarantee than assert.
+  -- Both of the above are eligible for the compiler to do optimizations based on them

@@ -82,3 +82,36 @@ let Vec3 = Vec2 + struct {
 -- Possibility: Allow treating structs with @size == 0 differently
 -- Then we can just replace the above with a normal struct
 -- The problem is making the . and () operators backtrack to find the correct object to call on
+
+
+
+-- Another addition I'd like: Assertive concepts.
+-- Essentially, you'd have something along these lines:
+let IList = $T => concept struct:
+  @impl #Explicit
+  let []: (@Self, usize) => ref T
+-- Because of the `@impl = #Explicit` (an opt in behavior), you must explicitly specify that a type implements
+-- a concept:
+{
+  assert not: []usize in IList(usize)
+}
+{
+  @impl: IList(usize), []usize
+  assert []usize in IList(usize)
+}
+-- Such implementations would be a compiletime mechanism which would also allow for "tagging" types
+let IUnit = concept:
+  @impl #Explicit | #Inherited
+  
+let IUnitOfWeight = Unit + concept {}
+let Pounds = distinct f64
+let MilesPerHour = distinct f64
+
+@impl IUnit, MilesPerHour
+-- Pounds also implicitly implements IUnit, as IUnitOfWeight is a superset of IUnit, which specifies its impl as
+-- allowing inherited implementations.
+@impl IUnitOfWeight, Pounds 
+assert Pounds in IUnitOfWeight
+assert not: MilesPerHour in IUnitOfWeight
+
+-- Of course, the above example would 
