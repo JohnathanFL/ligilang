@@ -46,7 +46,7 @@ nop %sh{
 KAK
 }
 
-add-highlighter shared/ligi/code/ regex \b(?<!@)(using|field|alias|let|cvar|var|export|pub|assert|break|return|continue|if|elif|finally|else|while|dowhile|for|loop|when|fn|macro|use|volatile|defer|is|test)\b 0:keyword
+add-highlighter shared/ligi/code/ regex \b(?<!@)(using|field|alias|let|cvar|var|export|pub|require|assert|break|return|continue|if|elif|finally|else|while|dowhile|for|loop|when|fn|macro|use|volatile|defer|is|test)\b 0:keyword
 add-highlighter shared/ligi/code/ regex \b(?<!@)(const|extern|packed|inline|property|comptime|overload|distinct|struct|enum|union|concept|array|ref|slice|pure|and|or|xor|mod|not|in|notin)\b 0:operator
 add-highlighter shared/ligi/code/ regex \b(?<!@)(anyenum|str|char|bool|f32|f64|f128|void|type)\b 0:type
 add-highlighter shared/ligi/code/ regex \b(u\d+|i\d+|isize|usize)\b|\b(\d+(\.\d+)?)(u\d+|i\d+|isize|usize|f32|f64)\b 1:type 2:variable 4:type
